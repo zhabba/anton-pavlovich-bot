@@ -3,7 +3,9 @@ package org.wyvie.chehov.bot;
 import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
-import com.pengrad.telegrambot.request.GetUpdates;
+import com.pengrad.telegrambot.model.User;
+import com.pengrad.telegrambot.request.*;
+import com.pengrad.telegrambot.response.GetChatResponse;
 import com.pengrad.telegrambot.response.GetUpdatesResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,7 +30,7 @@ public class MessageReader {
     private CommandProcessor commandProcessor;
     private TelegramBot telegramBot;
     private TelegramProperties telegramProperties;
-    private String botUsername;
+    private User botUser;
 
     private int lastOffset;
 
@@ -36,12 +38,12 @@ public class MessageReader {
     public MessageReader(CommandProcessor commandProcessor,
                          TelegramProperties telegramProperties,
                          @Qualifier("telegramBot") TelegramBot telegramBot,
-                         @Qualifier("botUsername") String botUsername) {
+                         @Qualifier("botUser") User botUser) {
 
         this.commandProcessor = commandProcessor;
         this.telegramBot = telegramBot;
         this.telegramProperties = telegramProperties;
-        this.botUsername = botUsername;
+        this.botUser = botUser;
 
         this.lastOffset = 0;
     }
@@ -56,7 +58,7 @@ public class MessageReader {
         GetUpdatesResponse response = telegramBot.execute(getUpdates);
         List<Update> updates = response.updates();
 
-        updates.forEach(update -> {
+        for (Update update : updates) {
             lastOffset = update.updateId() + 1;
 
             Message message = update.message();
@@ -66,8 +68,12 @@ public class MessageReader {
             if (validateCommmand(message))
                 commandProcessor.processCommand(message);
 
+            // if there are new people in chat, greet them
+            if (!greetNewPeople(message))
+                return;
+
             lastOffset = update.updateId() + 1;
-        });
+        }
     }
 
     /**
@@ -89,7 +95,7 @@ public class MessageReader {
 
             // talking to another bot here
             if (command.contains("@") &&
-                    !command.endsWith("@" + botUsername)) {
+                    !command.endsWith("@" + botUser.username())) {
 
                 return false;
             }
@@ -99,5 +105,54 @@ public class MessageReader {
 
         // not a command
         return false;
+    }
+
+    /**
+     * Used to greet new people in chat and attach pinned message
+     * @param message message we got from update method
+     * @return false if we were successful in command processing,
+     *         true otherwise
+     */
+    private boolean greetNewPeople(Message message) {
+        User[] users = message.newChatMembers();
+
+        if (users == null)
+            return true;
+
+        Long chatId = message.chat().id();
+        GetChat getChat = new GetChat(chatId);
+        GetChatResponse chatResponse = telegramBot.execute(getChat);
+        if (!chatResponse.isOk())
+            return false;
+
+        Message pinnedMessage = chatResponse.chat().pinnedMessage();
+
+        // if there is no pinned message in chat, we should
+        // mark join message as successful
+        if (pinnedMessage == null)
+            return true;
+
+        StringBuilder userArray = new StringBuilder("");
+        for (User user : users) {
+            if (!user.id().equals(botUser.id())) {
+                String userReference = user.username();
+                if (StringUtils.isEmpty(user.username())) {
+                    userReference = user.firstName() + " " + user.lastName();
+                }
+
+                if (!StringUtils.isEmpty(userReference.trim())) {
+                    if (userArray.length() >  0) userArray.append(", ");
+                    userArray.append(userReference);
+                }
+            }
+        }
+
+        String text = userArray.toString().trim() + "\n" +
+                "Добрый день. Ознакомьтесь, пожалуйста, с правилами чата.";
+
+        SendMessage sendMessage = new SendMessage(chatId, text).replyToMessageId(pinnedMessage.messageId());
+        telegramBot.execute(sendMessage);
+
+        return true;
     }
 }

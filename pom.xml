@@ -5,10 +5,10 @@
 
     <groupId>org.wyvie</groupId>
     <artifactId>anton-pavlovich-bot</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.0.2-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-    <name>anton-pavlovich-bot</name>
+    <name>stallman-bot</name>
     <description>Anton Pavlovich Bot</description>
 
     <parent>
